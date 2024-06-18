@@ -32,12 +32,18 @@ connection = None
 channel = None
 connected_clients = set()
 
-# Dictionary to store cached transaction results
+# Dictionary to store cached pool hashrate and transaction results
 transaction_cache = {}
+hashrate_cache = {}
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+pool_name_mapping = {
+    "Foundry USA": "foundryusa",
+    # Add more mappings for other pool names
+}
 
 # RabbitMQ connection details
 rabbitmq_host = os.environ.get('RABBITMQ_HOST')
@@ -65,10 +71,14 @@ def process_row_data(row):
     fee_rate = get_transaction_fee_rate(first_transaction)
     merkle_branch_colors = precompute_merkle_branch_colors(merkle_branches)
     script_sig_ascii = extract_coinbase_script_ascii(coinbase_tx)
+    
+    pool_name = row['pool_name']
+    hashrate = get_pool_hashrate(pool_name)
 
     processed_row = {
         'pool_name': row['pool_name'],
         'timestamp': row['timestamp'],
+        'hashrate': hashrate,
         'height': height,
         'prev_block_hash': prev_block_hash,
         'block_version': block_version,
@@ -155,6 +165,36 @@ def precompute_merkle_branch_colors(merkle_branches):
 
 def hash_code(text):
     return sum(ord(char) for char in text)
+
+def get_pool_hashrate(pool_name):
+    api_pool_name = pool_name_mapping.get(pool_name)
+    if not api_pool_name:
+        return None
+
+    current_time = time.time()
+    if pool_name in hashrate_cache and current_time < hashrate_cache[pool_name]["expiry"]:
+        return hashrate_cache[pool_name]["value"]
+
+    url = f"https://mempool.space/api/v1/mining/pool/{api_pool_name}/hashrate"
+    response = requests.get(url)
+    data = response.json()
+
+    if not data:
+        return None
+
+    latest_entry = data[0]
+    timestamp = latest_entry["timestamp"]
+    avg_hashrate = latest_entry["avgHashrate"]
+
+    if avg_hashrate >= 10**18:
+        hashrate = f"{avg_hashrate / 10**18:.2f} EH/s"
+    else:
+        hashrate = f"{avg_hashrate / 10**15:.2f} PH/s"
+
+    cache_expiry = timestamp + (7 * 24 * 60 * 60) + (3 * 60 * 60)  # 1 week and 3 hours in seconds
+    hashrate_cache[pool_name] = {"value": hashrate, "expiry": cache_expiry}
+
+    return hashrate
 
 def consume_messages():
     global connection, channel

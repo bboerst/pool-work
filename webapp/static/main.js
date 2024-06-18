@@ -51,6 +51,7 @@ document.addEventListener('DOMContentLoaded', () => {
         },
         formatter: formatTimestamp,
       },
+      { title: 'Weekly Avg Hashrate', field: 'hashrate' },
       { title: '<!--<a href="https://github.com/bboerst/stratum-work/blob/main/docs/height.md" target="_blank"><i class="fas fa-question-circle"></i></a><br /> -->Height', field: 'height' },
       { title: 'Previous Block Hash', field: 'prev_block_hash' },
       { title: 'Block Version', field: 'block_version' },
